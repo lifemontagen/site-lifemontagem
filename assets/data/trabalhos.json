@@ -1,0 +1,137 @@
+[
+  {
+    "id": "painel-ripado-com-rack-para-tv",
+    "titulo": "Painel ripado com rack para TV",
+    "categoria": "paineis",
+    "w": 1054,
+    "h": 1400,
+    "origem": "fotos/paineis-e-racks/Painel ripado com rack para TV.jpg",
+    "assinatura": "3c1a4faf6399"
+  },
+  {
+    "id": "guarda-roupa-de-seis-portas",
+    "titulo": "Guarda-roupa de seis portas",
+    "categoria": "armarios",
+    "w": 1400,
+    "h": 1400,
+    "origem": "fotos/guarda-roupas-e-armarios/Guarda-roupa de seis portas.jpg",
+    "assinatura": "fbe780fb3d11"
+  },
+  {
+    "id": "cozinha-verde-com-torre-de-nichos",
+    "titulo": "Cozinha verde com torre de nichos",
+    "categoria": "cozinhas",
+    "w": 1050,
+    "h": 1400,
+    "origem": "fotos/cozinhas/Cozinha verde com torre de nichos.jpg",
+    "assinatura": "f149f705d5d1"
+  },
+  {
+    "id": "rack-com-nichos-e-armario-aereo",
+    "titulo": "Rack com nichos e armário aéreo",
+    "categoria": "paineis",
+    "w": 1214,
+    "h": 1400,
+    "origem": "fotos/paineis-e-racks/Rack com nichos e armário aéreo.jpg",
+    "assinatura": "176fd0fef6d1"
+  },
+  {
+    "id": "painel-de-tv-com-escrivaninha",
+    "titulo": "Painel de TV com escrivaninha",
+    "categoria": "paineis",
+    "w": 1050,
+    "h": 1400,
+    "origem": "fotos/paineis-e-racks/Painel de TV com escrivaninha.jpg",
+    "assinatura": "4b54fea77f22"
+  },
+  {
+    "id": "cozinha-com-aereos-de-vidro",
+    "titulo": "Cozinha com aéreos de vidro",
+    "categoria": "cozinhas",
+    "w": 1400,
+    "h": 1050,
+    "origem": "fotos/cozinhas/Cozinha com aéreos de vidro.jpg",
+    "assinatura": "14439ad93770"
+  },
+  {
+    "id": "quarto-com-guarda-roupa-e-aereo",
+    "titulo": "Quarto com guarda-roupa e aéreo",
+    "categoria": "armarios",
+    "w": 1400,
+    "h": 1050,
+    "origem": "fotos/guarda-roupas-e-armarios/Quarto com guarda-roupa e aéreo.jpg",
+    "assinatura": "c3469da9db3e"
+  },
+  {
+    "id": "painel-ripado-com-rack-suspenso",
+    "titulo": "Painel ripado com rack suspenso",
+    "categoria": "paineis",
+    "w": 1050,
+    "h": 1400,
+    "origem": "fotos/paineis-e-racks/Painel ripado com rack suspenso.jpg",
+    "assinatura": "e96d5ece0177"
+  },
+  {
+    "id": "cozinha-com-portas-ripadas",
+    "titulo": "Cozinha com portas ripadas",
+    "categoria": "cozinhas",
+    "w": 1400,
+    "h": 1050,
+    "origem": "fotos/cozinhas/Cozinha com portas ripadas.jpg",
+    "assinatura": "dc2fabf516cc"
+  },
+  {
+    "id": "cama-infantil-estilo-casinha",
+    "titulo": "Cama infantil estilo casinha",
+    "categoria": "infantil",
+    "w": 1050,
+    "h": 1400,
+    "origem": "fotos/quarto-infantil/Cama infantil estilo casinha.jpg",
+    "assinatura": "ec9c2e9ade65"
+  },
+  {
+    "id": "armarios-e-escrivaninha-grafite",
+    "titulo": "Armários e escrivaninha grafite",
+    "categoria": "armarios",
+    "w": 1050,
+    "h": 1400,
+    "origem": "fotos/guarda-roupas-e-armarios/Armários e escrivaninha grafite.jpg",
+    "assinatura": "0111902c2b0a"
+  },
+  {
+    "id": "cozinha-com-balcao-de-pia",
+    "titulo": "Cozinha com balcão de pia",
+    "categoria": "cozinhas",
+    "w": 1400,
+    "h": 1050,
+    "origem": "fotos/cozinhas/Cozinha com balcão de pia.jpg",
+    "assinatura": "4ff1dd4ddf97"
+  },
+  {
+    "id": "armario-com-portas-de-correr",
+    "titulo": "Armário com portas de correr",
+    "categoria": "armarios",
+    "w": 1120,
+    "h": 1400,
+    "origem": "fotos/guarda-roupas-e-armarios/Armário com portas de correr.jpg",
+    "assinatura": "15b253023e3e"
+  },
+  {
+    "id": "cozinha-compacta-com-aereos",
+    "titulo": "Cozinha compacta com aéreos",
+    "categoria": "cozinhas",
+    "w": 960,
+    "h": 1280,
+    "origem": "fotos/cozinhas/Cozinha compacta com aéreos.jpg",
+    "assinatura": "a99daa4c3654"
+  },
+  {
+    "id": "painel-ripado-de-parede",
+    "titulo": "Painel ripado de parede",
+    "categoria": "paineis",
+    "w": 1050,
+    "h": 1400,
+    "origem": "fotos/paineis-e-racks/Painel ripado de parede.jpg",
+    "assinatura": "b4f50916ef8a"
+  }
+]
