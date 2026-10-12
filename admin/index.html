@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Painel | Life Montagens</title>
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="theme-color" content="#16130f">
+  <link rel="icon" type="image/png" sizes="32x32" href="../assets/img/favicon-32.png">
+  <link rel="apple-touch-icon" href="../assets/img/apple-touch-icon.png">
+  <link rel="stylesheet" href="admin.css">
+</head>
+<body>
+
+  <!-- TELA DE LOGIN -->
+  <main id="tela-login" class="login" hidden>
+    <form id="form-login" class="login-card" autocomplete="on">
+      <img src="../assets/img/logo-128.png" alt="" width="64" height="64" class="login-logo">
+      <h1>Painel Life Montagens</h1>
+      <p class="muted">Entre com seu e-mail e senha.</p>
+      <label>E-mail
+        <input type="email" name="email" required autocomplete="username" inputmode="email">
+      </label>
+      <label>Senha
+        <input type="password" name="senha" required autocomplete="current-password">
+      </label>
+      <p class="erro" id="login-erro" hidden></p>
+      <button type="submit" class="btn btn-primario btn-largo">Entrar</button>
+    </form>
+  </main>
+
+  <!-- APLICATIVO -->
+  <div id="app" hidden>
+    <header class="topo">
+      <div class="topo-marca">
+        <img src="../assets/img/logo-128.png" alt="" width="32" height="32">
+        <div>
+          <strong>Life Montagens</strong>
+          <span id="topo-usuario" class="muted"></span>
+        </div>
+      </div>
+      <button type="button" class="btn btn-fantasma" id="btn-menu" aria-haspopup="true">Conta ▾</button>
+      <div class="menu" id="menu-conta" hidden>
+        <button type="button" data-acao="trocar-senha">Trocar minha senha</button>
+        <button type="button" data-acao="sair">Sair</button>
+      </div>
+    </header>
+
+    <nav class="abas" id="abas"></nav>
+
+    <main class="conteudo" id="conteudo"></main>
+  </div>
+
+  <!-- JANELA (formulários e detalhes) -->
+  <dialog id="janela" class="janela">
+    <div class="janela-topo">
+      <h2 id="janela-titulo"></h2>
+      <button type="button" class="btn-fechar" data-fechar aria-label="Fechar">×</button>
+    </div>
+    <div id="janela-corpo" class="janela-corpo"></div>
+  </dialog>
+
+  <div id="aviso" class="aviso" role="status" hidden></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.110.0/dist/umd/supabase.js"></script>
+  <script src="admin.js"></script>
+</body>
+</html>
