@@ -90,6 +90,13 @@ h1, h2, h3 { color: var(--ink); line-height: 1.2; }
 .topo-marca strong { font-size: 15px; }
 .topo-marca span { color: #c9c0b6; font-size: 13px; }
 .topo .btn-fantasma { color: #fff; }
+.topo-acoes { display: flex; align-items: center; gap: 4px; }
+.btn-topo {
+  position: relative; display: grid; place-items: center; width: 44px; height: 44px;
+  border: 0; border-radius: 50%; background: transparent; color: #fff; cursor: pointer;
+}
+.btn-topo:hover { background: rgba(255, 255, 255, .12); }
+.btn-topo .contador { position: absolute; top: 2px; right: 0; border: 2px solid var(--ink); height: 22px; line-height: 18px; }
 .menu {
   position: absolute; right: 12px; top: 56px; background: var(--paper);
   border-radius: 12px; box-shadow: var(--shadow); overflow: hidden; min-width: 200px;

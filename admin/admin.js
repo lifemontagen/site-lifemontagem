@@ -194,6 +194,8 @@ async function entrar(user) {
   $('#app').hidden = false;
   montarAbas();
   irPara(location.hash.slice(1));
+  $('#btn-avisos').hidden = !dono();
+  if (dono()) ligarAvisos();
 }
 
 async function sair() {
@@ -243,7 +245,7 @@ const ABAS = {
 
 function montarAbas() {
   $('#abas').innerHTML = ABAS[E.membro.papel].map(([id, titulo]) =>
-    `<button type="button" class="aba" data-aba="${id}">${titulo}${id === 'aprovacoes' ? ' <span class="contador" id="contador-aprov" hidden></span>' : ''}</button>`
+    `<button type="button" class="aba" data-aba="${id}">${titulo}${id === 'aprovacoes' ? ` <span class="contador" id="contador-${id}" hidden></span>` : ''}</button>`
   ).join('');
 }
 $('#abas').addEventListener('click', e => {
@@ -280,11 +282,18 @@ async function recarregar() {
 }
 
 async function atualizarContador() {
+  const mostrar = (id, n) => {
+    const el = $('#contador-' + id);
+    if (!el) return;
+    el.textContent = n;
+    el.hidden = !n;
+  };
   const { count, error } = await sb.from('lancamentos').select('id', { count: 'exact', head: true }).eq('aprovacao', 'pendente');
-  const el = $('#contador-aprov');
-  if (!el || error) return;
-  el.textContent = count;
-  el.hidden = !count;
+  if (!error) mostrar('aprovacoes', count);
+  try {
+    const [vencidas, deHoje] = await Promise.all([cobrancasVencidas(), servicosDeHoje()]);
+    mostrar('avisos', vencidas.length + deHoje.length);
+  } catch { /* o contador volta na próxima atualização */ }
 }
 
 function filtrosHtml(chave, lista) {
@@ -531,6 +540,24 @@ const STATUS = {
 const etiquetaStatus = s => `<span class="etiqueta ${STATUS[s][1]}">${STATUS[s][0]}</span>`;
 const totalServico = v => (v ? Number(v.valor_servico) + Number(v.valor_deslocamento) : 0);
 
+// Situação do pagamento de um serviço concluído: 'faturado', 'receber' ou 'sem' (ainda não faturado)
+function faturamento(a, v, lancs) {
+  if (a.status !== 'concluido') return null;
+  const doServico = lancs.filter(l => l.agendamento_id === a.id && l.tipo === 'entrada' && l.aprovacao === 'aprovado');
+  const semSinal = doServico.filter(l => l.categoria !== 'Sinal');
+  if (semSinal.some(l => l.situacao === 'pendente')) return 'receber';
+  if (semSinal.length) return 'faturado';
+  const sinalPago = doServico.some(l => l.categoria === 'Sinal' && l.situacao === 'pago');
+  if (sinalPago && totalServico(v) - Number(v?.sinal_valor || 0) <= 0) return 'faturado';
+  return 'sem';
+}
+function etiquetaAgendamento(a, fat) {
+  if (a.status !== 'concluido' || !fat) return etiquetaStatus(a.status);
+  if (fat === 'faturado') return '<span class="etiqueta verde">Concluído e faturado</span>';
+  if (fat === 'receber') return '<span class="etiqueta laranja">Concluído e a receber</span>';
+  return '<span class="etiqueta">Concluído · falta faturar</span>';
+}
+
 async function telaAgenda() {
   const filtro = E.filtro.agenda || 'proximos';
   let q = sb.from('agendamentos').select('*');
@@ -541,9 +568,12 @@ async function telaAgenda() {
   const lista = ok(await q);
 
   const valores = {};
+  let lancs = [];
   if (dono() && lista.length) {
-    ok(await sb.from('agendamento_valores').select('*').in('agendamento_id', lista.map(a => a.id)))
+    const ids = lista.map(a => a.id);
+    ok(await sb.from('agendamento_valores').select('*').in('agendamento_id', ids))
       .forEach(v => { valores[v.agendamento_id] = v; });
+    lancs = ok(await sb.from('lancamentos').select('id, agendamento_id, tipo, categoria, situacao, aprovacao').in('agendamento_id', ids));
   }
 
   const agora = Date.now();
@@ -560,7 +590,7 @@ async function telaAgenda() {
       <button type="button" class="cartao" data-ag="${a.id}">
         <div class="cartao-linha">
           <h3>${fmtHoraOuNao(a.data_hora)} · ${esc(a.cliente_nome)}</h3>
-          ${atrasado ? '<span class="etiqueta laranja">Passou da data</span>' : etiquetaStatus(a.status)}
+          ${atrasado ? '<span class="etiqueta laranja">Passou da data</span>' : etiquetaAgendamento(a, dono() ? faturamento(a, v, lancs) : null)}
         </div>
         <p class="linhas">${esc(a.servico)}</p>
         <div class="cartao-linha">
@@ -605,7 +635,7 @@ async function detalheAgendamento(id) {
       ${a.cliente_telefone ? `<dt>Telefone</dt><dd><a href="tel:${esc(soDigitos(a.cliente_telefone))}">${esc(a.cliente_telefone)}</a>${whats ? ` · <a href="${whats}" target="_blank" rel="noopener">WhatsApp</a>` : ''}</dd>` : ''}
       <dt>Serviço</dt><dd class="linhas">${esc(a.servico)}</dd>
       ${end ? `<dt>Endereço</dt><dd><a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(end)}" target="_blank" rel="noopener">${esc(end)}</a></dd>` : ''}
-      <dt>Situação</dt><dd>${etiquetaStatus(a.status)}</dd>
+      <dt>Situação</dt><dd>${etiquetaAgendamento(a, dono() ? faturamento(a, v, lancs) : null)}</dd>
       ${a.observacoes ? `<dt>Obs.</dt><dd>${esc(a.observacoes)}</dd>` : ''}
     </dl>
 
@@ -623,7 +653,8 @@ async function detalheAgendamento(id) {
       ${lancs.length ? `<p class="dica">Já lançado no financeiro:</p><div class="lista">${lancs.map(l => cartaoLancamento(l)).join('')}</div>` : ''}
       <div class="botoes">
         ${sinal && !temSinal ? '<button type="button" class="btn btn-pequeno" id="reg-sinal">Registrar sinal recebido</button>' : ''}
-        ${total ? '<button type="button" class="btn btn-pequeno btn-escuro" id="gerar-cobranca">Gerar cobrança (a receber)</button>' : ''}
+        ${!lancs.some(l => l.tipo === 'entrada' && l.categoria !== 'Sinal') && (a.status === 'concluido' || total)
+          ? `<button type="button" class="btn btn-pequeno btn-escuro" id="gerar-cobranca">${a.status === 'concluido' ? 'Faturar' : 'Gerar cobrança antecipada'}</button>` : ''}
       </div>
     </div>` : ''}
 
@@ -641,6 +672,8 @@ async function detalheAgendamento(id) {
   blocoFotos($('#fotos-ag', c), 'agendamento_id', a.id);
 
   $$('[data-status]', c).forEach(b => b.addEventListener('click', () => comBotao(b, async () => {
+    // O dono conclui já informando se o cliente pagou (faturado) ou quando vai pagar (a receber)
+    if (b.dataset.status === 'concluido' && dono()) { await formConcluir(a, v, lancs); return; }
     if (b.dataset.status === 'cancelado' && !confirm('Cancelar este agendamento?')) return;
     ok(await sb.from('agendamentos').update({ status: b.dataset.status }).eq('id', a.id));
     aviso(b.dataset.status === 'concluido' ? 'Serviço concluído.' : 'Situação atualizada.');
@@ -668,6 +701,7 @@ async function detalheAgendamento(id) {
     await detalheAgendamento(a.id);
   }));
   $('#gerar-cobranca', c)?.addEventListener('click', e => comBotao(e.currentTarget, async () => {
+    if (a.status === 'concluido') { await formConcluir(a, v, lancs, { jaConcluido: true }); return; }
     let prazo = 0;
     if (a.cliente_id) {
       const cli = ok(await sb.from('clientes').select('prazo_pagamento_dias').eq('id', a.cliente_id).maybeSingle());
@@ -684,6 +718,83 @@ async function detalheAgendamento(id) {
       cliente_id: a.cliente_id, cliente_nome: a.cliente_nome, agendamento_id: a.id,
     });
   }));
+}
+
+// Concluir (ou faturar) um serviço: pergunta se o cliente já pagou
+async function formConcluir(a, v, lancs, { jaConcluido = false } = {}) {
+  const total = totalServico(v);
+  const sinal = Number(v?.sinal_valor || 0);
+  const sinalLancado = lancs.some(l => l.categoria === 'Sinal');
+  let prazo = 0;
+  if (a.cliente_id) {
+    const cli = ok(await sb.from('clientes').select('prazo_pagamento_dias').eq('id', a.cliente_id).maybeSingle());
+    prazo = cli?.prazo_pagamento_dias || 0;
+  }
+  const vencPadrao = somarDias(isoLocal(new Date(a.data_hora)), prazo);
+  const c = abrirJanela(jaConcluido ? 'Faturar serviço' : 'Concluir serviço', `
+    <form class="form">
+      <p><strong>${esc(a.cliente_nome)}</strong></p>
+      <p class="muted linhas pequeno">${esc(a.servico)}</p>
+      ${total ? `<p class="dica">Total ${brl(total)}${sinal ? ` · sinal ${brl(sinal)} · falta ${brl(Math.max(total - sinal, 0))}` : ''}</p>` : ''}
+      <label>Valor a receber (R$) <input name="valor" inputmode="decimal" placeholder="0,00" value="${paraCampoValor(Math.max(total - sinal, 0))}"></label>
+      ${sinal && !sinalLancado ? `<label class="check"><input type="checkbox" name="lancar_sinal" checked> Registrar também o sinal de ${brl(sinal)} como recebido</label>` : ''}
+      <p style="font-weight:700;color:var(--ink)">O cliente já pagou?</p>
+      <div class="escolha">
+        <label><input type="radio" name="pagou" value="sim"> Sim, já recebi</label>
+        <label><input type="radio" name="pagou" value="nao"> Não, vai pagar depois</label>
+      </div>
+      <div class="grade" data-so="sim" hidden>
+        <label>Recebido em <input type="date" name="data_pagamento" value="${hoje()}"></label>
+        <label>Forma <select name="forma_sim"><option value="">-</option>${opcoes(FORMAS, v?.forma_pagamento)}</select></label>
+      </div>
+      <div class="grade" data-so="nao" hidden>
+        <label>Vai pagar em <input type="date" name="data_vencimento" value="${vencPadrao}"></label>
+        <label>Forma <select name="forma_nao"><option value="">-</option>${opcoes(FORMAS, v?.forma_pagamento)}</select></label>
+        <p class="dica inteiro">🔔 Nesse dia, o painel vai perguntar se o cliente pagou.</p>
+      </div>
+      <button type="submit" class="btn btn-verde btn-largo">${jaConcluido ? 'Faturar' : '✓ Concluir serviço'}</button>
+      <button type="button" class="btn btn-largo" id="voltar-concluir">Voltar</button>
+    </form>`);
+  const f = $('form', c);
+  $$('input[name=pagou]', f).forEach(r => r.addEventListener('change', () => {
+    $('[data-so=sim]', f).hidden = f.pagou.value !== 'sim';
+    $('[data-so=nao]', f).hidden = f.pagou.value !== 'nao';
+  }));
+  $('#voltar-concluir', c).addEventListener('click', () => acao(detalheAgendamento)(a.id));
+  f.addEventListener('submit', ev => {
+    ev.preventDefault();
+    comBotao(f.querySelector('[type=submit]'), async () => {
+      const d = lerForm(f);
+      if (!d.pagou) { aviso('Responda se o cliente já pagou.', true); return; }
+      const pagou = d.pagou === 'sim';
+      const valor = paraNumero(d.valor);
+      if (!pagou && !valor) { aviso('Coloque o valor a receber.', true); return; }
+      if (pagou ? !d.data_pagamento : !d.data_vencimento) { aviso('Coloque a data.', true); return; }
+      if (d.lancar_sinal) {
+        ok(await sb.from('lancamentos').insert({
+          tipo: 'entrada', situacao: 'pago', categoria: 'Sinal', valor: sinal,
+          descricao: `Sinal - ${a.cliente_nome} - ${umaLinha(a.servico, 60)}`,
+          forma_pagamento: v?.sinal_forma_pagamento || null, data_pagamento: hoje(),
+          cliente_id: a.cliente_id, cliente_nome: a.cliente_nome, agendamento_id: a.id,
+        }));
+      }
+      if (valor) {
+        ok(await sb.from('lancamentos').insert({
+          tipo: 'entrada', categoria: 'Serviço', valor,
+          descricao: `${a.cliente_nome} - ${umaLinha(a.servico, 60)}`,
+          situacao: pagou ? 'pago' : 'pendente',
+          data_pagamento: pagou ? d.data_pagamento : null,
+          data_vencimento: pagou ? null : d.data_vencimento,
+          forma_pagamento: pagou ? d.forma_sim : d.forma_nao,
+          cliente_id: a.cliente_id, cliente_nome: a.cliente_nome, agendamento_id: a.id,
+        }));
+      }
+      if (!jaConcluido) ok(await sb.from('agendamentos').update({ status: 'concluido' }).eq('id', a.id));
+      aviso(pagou ? 'Concluído e faturado.' : `Concluído e a receber. Lembrete em ${fmtData(d.data_vencimento)}.`);
+      recarregar();
+      await detalheAgendamento(a.id);
+    });
+  });
 }
 
 // Abre o catálogo por cômodo e devolve o texto do serviço (ou null)
@@ -1432,6 +1543,197 @@ async function telaPagamentos() {
     ligar: ligarCartoesLancamento,
   };
 }
+
+/* =========================================================
+   NOTIFICAÇÕES (só o dono)
+   ========================================================= */
+const CHAVE_ADIAR = 'lm-adiar-';
+const CHAVE_RESUMO = 'lm-resumo-dia';
+const lerLocal = k => { try { return localStorage.getItem(k); } catch { return null; } };
+const gravarLocal = (k, v) => { try { localStorage.setItem(k, v); } catch { /* sem armazenamento: só não lembra */ } };
+// "Ainda não pagou": pergunta de novo no dia seguinte
+const adiado = id => (lerLocal(CHAVE_ADIAR + id) || '') > hoje();
+const adiar = id => gravarLocal(CHAVE_ADIAR + id, somarDias(hoje(), 1));
+
+async function cobrancasVencidas() {
+  return ok(await sb.from('lancamentos').select('*').eq('tipo', 'entrada').eq('situacao', 'pendente')
+    .eq('aprovacao', 'aprovado').lte('data_vencimento', hoje()).order('data_vencimento', { ascending: true }));
+}
+async function servicosDeHoje() {
+  const ini = new Date();
+  ini.setHours(0, 0, 0, 0);
+  const fim = new Date(ini);
+  fim.setDate(fim.getDate() + 1);
+  return ok(await sb.from('agendamentos').select('*').eq('status', 'agendado')
+    .gte('data_hora', ini.toISOString()).lt('data_hora', fim.toISOString()).order('data_hora', { ascending: true }));
+}
+function quandoVence(l) {
+  if (l.data_vencimento === hoje()) return 'para <b>hoje</b>';
+  const dias = Math.round((new Date(hoje()) - new Date(l.data_vencimento)) / 864e5);
+  return `para <b>${fmtData(l.data_vencimento)}</b> (${dias} ${dias === 1 ? 'dia' : 'dias'} de atraso)`;
+}
+async function marcarRecebido(l) {
+  ok(await sb.from('lancamentos').update({ situacao: 'pago', data_pagamento: hoje() }).eq('id', l.id));
+  aviso(`Pagamento de ${l.cliente_nome || 'cliente'} recebido. Serviço faturado.`);
+  recarregar();
+}
+
+// Janela que aparece sozinha: "fulano pagou?"
+function perguntarPagamento(l) {
+  return new Promise(resolve => {
+    const quem = esc(l.cliente_nome || l.descricao);
+    const dlg = document.createElement('dialog');
+    dlg.className = 'janela';
+    dlg.innerHTML = `
+      <div class="janela-topo"><h2>🔔 Pagamento agendado</h2><button type="button" class="btn-fechar" aria-label="Fechar">×</button></div>
+      <div class="janela-corpo">
+        <p style="font-size:18px"><b>${quem}</b> agendou o pagamento de <b>${brl(l.valor)}</b> ${quandoVence(l)}.</p>
+        <p class="muted pequeno linhas">${esc(l.descricao)}</p>
+        <p style="font-size:20px;font-weight:700;color:var(--ink)">${quem} pagou?</p>
+        <button type="button" class="btn btn-verde btn-largo" data-r="sim">Sim, pagou</button>
+        <button type="button" class="btn btn-largo" data-r="nao">Ainda não (lembrar amanhã)</button>
+        <button type="button" class="btn btn-fantasma btn-largo" data-r="data">Combinou outra data</button>
+        <div class="grade" data-nova hidden>
+          <label>Nova data <input type="date" min="${somarDias(hoje(), 1)}" value="${somarDias(hoje(), 1)}"></label>
+          <button type="button" class="btn btn-primario" data-r="salvar" style="align-self:end">Salvar data</button>
+        </div>
+      </div>`;
+    document.body.append(dlg);
+    const terminar = r => { dlg.close(); dlg.remove(); resolve(r); };
+    $('.btn-fechar', dlg).addEventListener('click', () => terminar('fechar'));
+    dlg.addEventListener('cancel', e => { e.preventDefault(); terminar('fechar'); });
+    dlg.addEventListener('click', e => {
+      const b = e.target.closest('[data-r]');
+      if (!b) return;
+      const r = b.dataset.r;
+      if (r === 'data') { $('[data-nova]', dlg).hidden = false; return; }
+      comBotao(b, async () => {
+        if (r === 'sim') await marcarRecebido(l);
+        if (r === 'nao') { adiar(l.id); aviso('Combinado: pergunto de novo amanhã.'); }
+        if (r === 'salvar') {
+          const nova = $('[data-nova] input', dlg).value;
+          if (!nova) return;
+          ok(await sb.from('lancamentos').update({ data_vencimento: nova }).eq('id', l.id));
+          aviso(`Pagamento remarcado para ${fmtData(nova)}.`);
+          recarregar();
+        }
+        terminar(r);
+      });
+    });
+    dlg.showModal();
+  });
+}
+
+// Resumo dos serviços do dia, uma vez por dia
+function avisarServicosDeHoje(lista) {
+  return new Promise(resolve => {
+    const dlg = document.createElement('dialog');
+    dlg.className = 'janela';
+    dlg.innerHTML = `
+      <div class="janela-topo"><h2>🔔 Serviços de hoje</h2><button type="button" class="btn-fechar" aria-label="Fechar">×</button></div>
+      <div class="janela-corpo">
+        <p>Você tem <b>${lista.length} ${lista.length === 1 ? 'serviço' : 'serviços'}</b> hoje:</p>
+        <div class="lista">${lista.map(a => `<div class="cartao"><h3>${fmtHoraOuNao(a.data_hora)} · ${esc(a.cliente_nome)}</h3><p class="linhas">${esc(umaLinha(a.servico, 90))}</p><p>${esc([a.bairro, a.cidade].filter(Boolean).join(', '))}</p></div>`).join('')}</div>
+        <button type="button" class="btn btn-primario btn-largo" data-ok>Ok</button>
+      </div>`;
+    document.body.append(dlg);
+    const terminar = () => { dlg.close(); dlg.remove(); resolve(); };
+    $('.btn-fechar', dlg).addEventListener('click', terminar);
+    $('[data-ok]', dlg).addEventListener('click', terminar);
+    dlg.addEventListener('cancel', e => { e.preventDefault(); terminar(); });
+    dlg.showModal();
+  });
+}
+
+let verificandoAvisos = false;
+async function verificarAvisos() {
+  // Não interrompe se houver uma janela aberta (ex.: preenchendo um formulário)
+  if (!dono() || verificandoAvisos || document.hidden || document.querySelector('dialog[open]')) return;
+  verificandoAvisos = true;
+  try {
+    if (lerLocal(CHAVE_RESUMO) !== hoje()) {
+      const deHoje = await servicosDeHoje();
+      gravarLocal(CHAVE_RESUMO, hoje());
+      if (deHoje.length) await avisarServicosDeHoje(deHoje);
+    }
+    const lista = (await cobrancasVencidas()).filter(l => !adiado(l.id));
+    for (const l of lista) {
+      if (await perguntarPagamento(l) === 'fechar') break;
+    }
+    atualizarContador();
+  } catch (e) {
+    console.error(e);
+  } finally {
+    verificandoAvisos = false;
+  }
+}
+let avisosLigados = false;
+function ligarAvisos() {
+  if (avisosLigados) return;
+  avisosLigados = true;
+  setTimeout(verificarAvisos, 1000);
+  setInterval(verificarAvisos, 30 * 60e3);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) verificarAvisos(); });
+}
+
+async function telaAvisos() {
+  const em7 = somarDias(hoje(), 7);
+  const [vencidas, deHoje, proximas] = await Promise.all([
+    cobrancasVencidas(),
+    servicosDeHoje(),
+    sb.from('lancamentos').select('*').eq('tipo', 'entrada').eq('situacao', 'pendente').eq('aprovacao', 'aprovado')
+      .gt('data_vencimento', hoje()).lte('data_vencimento', em7).order('data_vencimento', { ascending: true }).then(ok),
+  ]);
+  const cartaoCobranca = l => `
+    <div class="cartao">
+      <div class="cartao-linha"><h3>${esc(l.cliente_nome || l.descricao)}</h3><span class="valor entrada">${brl(l.valor)}</span></div>
+      <p>Pagamento agendado ${quandoVence(l)}.${adiado(l.id) ? ' <span class="etiqueta">lembrete amanhã</span>' : ''}</p>
+      <p style="font-weight:700;color:var(--ink);margin-top:6px">Pagou?</p>
+      <div class="botoes" style="margin-top:8px">
+        <button type="button" class="btn btn-verde btn-pequeno" data-sim="${l.id}">Sim, pagou</button>
+        <button type="button" class="btn btn-pequeno" data-nao="${l.id}">Ainda não</button>
+        <button type="button" class="btn btn-fantasma btn-pequeno" data-lanc="${l.id}">Detalhes</button>
+      </div>
+    </div>`;
+  const cartaoServico = a => `
+    <button type="button" class="cartao" data-ag="${a.id}">
+      <div class="cartao-linha"><h3>${fmtHoraOuNao(a.data_hora)} · ${esc(a.cliente_nome)}</h3>${etiquetaStatus(a.status)}</div>
+      <p class="linhas">${esc(umaLinha(a.servico, 90))}</p>
+      <p>${esc([a.bairro, a.cidade].filter(Boolean).join(', '))}</p>
+    </button>`;
+  const nada = !vencidas.length && !deHoje.length && !proximas.length;
+  return {
+    html: `
+      ${nada ? '<p class="vazio">Nada para hoje. 👍</p>' : ''}
+      ${vencidas.length ? `<p class="dia">Pagamentos para confirmar</p><div class="lista">${vencidas.map(cartaoCobranca).join('')}</div>` : ''}
+      ${deHoje.length ? `<p class="dia">Serviços de hoje</p><div class="lista">${deHoje.map(cartaoServico).join('')}</div>` : ''}
+      ${proximas.length ? `<p class="dia">Pagamentos dos próximos 7 dias</p><div class="lista">${proximas.map(cartaoLancamento).join('')}</div>` : ''}
+      <p class="muted pequeno" style="margin-top:16px">As perguntas aparecem sozinhas quando o painel está aberto, no dia do pagamento.</p>`,
+    ligar(el) {
+      ligarCartoesLancamento(el);
+      $$('[data-ag]', el).forEach(b => b.addEventListener('click', () => acao(detalheAgendamento)(b.dataset.ag)));
+      $$('[data-sim]', el).forEach(b => b.addEventListener('click', () => comBotao(b, async () => {
+        await marcarRecebido(vencidas.find(l => String(l.id) === b.dataset.sim));
+        await abrirAvisos();
+      })));
+      $$('[data-nao]', el).forEach(b => b.addEventListener('click', acao(async () => {
+        adiar(b.dataset.nao);
+        aviso('Combinado: pergunto de novo amanhã.');
+        await abrirAvisos();
+      })));
+    },
+  };
+}
+
+// Sino no topo: abre as notificações numa janela
+async function abrirAvisos() {
+  abrirJanela('🔔 Notificações', '<p class="carregando">Carregando…</p>');
+  const tela = await telaAvisos();
+  const c = abrirJanela('🔔 Notificações', tela.html);
+  tela.ligar(c);
+  atualizarContador();
+}
+$('#btn-avisos').addEventListener('click', acao(abrirAvisos));
 
 const TELAS = {
   agenda: telaAgenda,
