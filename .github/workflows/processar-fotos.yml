@@ -1,0 +1,34 @@
+name: Atualizar fotos dos trabalhos
+
+on:
+  push:
+    paths:
+      - "fotos/**"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fotos:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Instalar ferramentas de imagem
+        run: pip install pillow pillow-heif
+      - name: Gerar fotos otimizadas e atualizar as páginas
+        run: python3 scripts/processar_fotos.py
+      - name: Publicar
+        run: |
+          git add -A assets/img/trabalhos assets/data/trabalhos.json index.html trabalhos.html
+          if git diff --cached --quiet; then
+            echo "Nada para atualizar."
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -m "Atualiza fotos dos trabalhos"
+            git push
+          fi
