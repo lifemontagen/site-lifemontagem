@@ -651,18 +651,28 @@ async function detalheAgendamento(id) {
         ${v.forma_pagamento ? `<dt>Pagamento</dt><dd>${esc(v.forma_pagamento)}</dd>` : ''}
       </dl>` : '<p class="dica">Sem valores. Toque em Editar para colocar.</p>'}
       ${lancs.length ? `<p class="dica">Já lançado no financeiro:</p><div class="lista">${lancs.map(l => cartaoLancamento(l)).join('')}</div>` : ''}
-      <div class="botoes">
-        ${sinal && !temSinal ? '<button type="button" class="btn btn-pequeno" id="reg-sinal">Registrar sinal recebido</button>' : ''}
-        ${!lancs.some(l => l.tipo === 'entrada' && l.categoria !== 'Sinal') && (a.status === 'concluido' || total)
-          ? `<button type="button" class="btn btn-pequeno btn-escuro" id="gerar-cobranca">${a.status === 'concluido' ? 'Faturar' : 'Gerar cobrança antecipada'}</button>` : ''}
-      </div>
+      ${sinal && !temSinal && a.status === 'agendado' ? '<div class="botoes"><button type="button" class="btn btn-pequeno" id="reg-sinal">Registrar sinal recebido</button></div>' : ''}
+      ${a.status === 'concluido' && faturamento(a, v, lancs) === 'sem' ? `
+        <p style="font-weight:700;color:var(--ink)">Este serviço ainda não foi faturado. O cliente pagou?</p>
+        <div class="botoes">
+          <button type="button" class="btn btn-verde" data-concluir="pago">✓ Pago</button>
+          <button type="button" class="btn btn-laranja" data-concluir="nao">Não pago</button>
+        </div>
+        <div data-painel-concluir></div>` : ''}
     </div>` : ''}
+
+    ${a.status === 'agendado' && dono() ? `
+    <div class="botoes">
+      <button type="button" class="btn btn-verde" data-concluir="pago">✓ Concluído e pago</button>
+      <button type="button" class="btn btn-laranja" data-concluir="nao">Concluído, não pago</button>
+    </div>
+    <div data-painel-concluir></div>` : ''}
 
     <div class="botoes">
       ${a.status === 'agendado' ? `
-        <button type="button" class="btn btn-verde" data-status="concluido">✓ Concluído</button>
-        <button type="button" class="btn btn-perigo" data-status="cancelado">Cancelar</button>` : `
-        <button type="button" class="btn" data-status="agendado">Voltar para agendado</button>`}
+        ${dono() ? '' : '<button type="button" class="btn btn-verde" data-status="concluido">✓ Concluído</button>'}
+        <button type="button" class="btn btn-perigo" data-status="cancelado">Cancelar</button>` : ''}
+      ${a.status === 'cancelado' || (a.status === 'concluido' && dono()) ? '<button type="button" class="btn" id="voltar-agendado">Voltar para agendado</button>' : ''}
       <button type="button" class="btn" id="editar-ag">Editar</button>
       ${dono() ? '<button type="button" class="btn btn-perigo" id="excluir-ag">Excluir</button>' : ''}
     </div>
@@ -671,9 +681,10 @@ async function detalheAgendamento(id) {
 
   blocoFotos($('#fotos-ag', c), 'agendamento_id', a.id);
 
+  $$('[data-concluir]', c).forEach(b => b.addEventListener('click', () =>
+    comBotao(b, () => concluirServico(c, b.dataset.concluir, a, v, lancs))));
+  $('#voltar-agendado', c)?.addEventListener('click', e => comBotao(e.currentTarget, () => voltarParaAgendado(a, lancs)));
   $$('[data-status]', c).forEach(b => b.addEventListener('click', () => comBotao(b, async () => {
-    // O dono conclui já informando se o cliente pagou (faturado) ou quando vai pagar (a receber)
-    if (b.dataset.status === 'concluido' && dono()) { await formConcluir(a, v, lancs); return; }
     if (b.dataset.status === 'cancelado' && !confirm('Cancelar este agendamento?')) return;
     ok(await sb.from('agendamentos').update({ status: b.dataset.status }).eq('id', a.id));
     aviso(b.dataset.status === 'concluido' ? 'Serviço concluído.' : 'Situação atualizada.');
@@ -700,101 +711,100 @@ async function detalheAgendamento(id) {
     aviso('Sinal registrado no financeiro.');
     await detalheAgendamento(a.id);
   }));
-  $('#gerar-cobranca', c)?.addEventListener('click', e => comBotao(e.currentTarget, async () => {
-    if (a.status === 'concluido') { await formConcluir(a, v, lancs, { jaConcluido: true }); return; }
+}
+
+// Concluir (ou faturar) um serviço.
+// "pago": entra no faturamento com a data de hoje. "nao": mostra a data e a forma em que o cliente vai pagar.
+async function concluirServico(c, modo, a, v, lancs) {
+  const jaConcluido = a.status === 'concluido';
+  const total = totalServico(v);
+  const sinal = Number(v?.sinal_valor || 0);
+  const sinalLancado = lancs.some(l => l.categoria === 'Sinal');
+  const falta = Math.max(total - sinal, 0);
+  const painel = $('[data-painel-concluir]', c);
+
+  const gravar = async ({ valor, pago, data, forma }) => {
+    if (sinal && !sinalLancado) {
+      ok(await sb.from('lancamentos').insert({
+        tipo: 'entrada', situacao: 'pago', categoria: 'Sinal', valor: sinal,
+        descricao: `Sinal - ${a.cliente_nome} - ${umaLinha(a.servico, 60)}`,
+        forma_pagamento: v?.sinal_forma_pagamento || null, data_pagamento: hoje(),
+        cliente_id: a.cliente_id, cliente_nome: a.cliente_nome, agendamento_id: a.id,
+      }));
+    }
+    if (valor) {
+      ok(await sb.from('lancamentos').insert({
+        tipo: 'entrada', categoria: 'Serviço', valor,
+        descricao: `${a.cliente_nome} - ${umaLinha(a.servico, 60)}`,
+        situacao: pago ? 'pago' : 'pendente',
+        data_pagamento: pago ? hoje() : null,
+        data_vencimento: pago ? null : data,
+        forma_pagamento: forma || null,
+        cliente_id: a.cliente_id, cliente_nome: a.cliente_nome, agendamento_id: a.id,
+      }));
+    }
+    if (!jaConcluido) ok(await sb.from('agendamentos').update({ status: 'concluido' }).eq('id', a.id));
+    aviso(pago
+      ? `Concluído e pago. ${valor ? brl(valor) + ' entrou no faturamento de hoje.' : ''}`
+      : `Concluído e a receber. Lembrete em ${fmtData(data)}.`);
+    recarregar();
+    await detalheAgendamento(a.id);
+  };
+
+  // Pago com valor já conhecido: um toque só, data de pagamento = hoje
+  if (modo === 'pago' && falta) {
+    await gravar({ valor: falta, pago: true, forma: v?.forma_pagamento });
+    return;
+  }
+
+  let vencPadrao = hoje();
+  if (modo === 'nao') {
     let prazo = 0;
     if (a.cliente_id) {
       const cli = ok(await sb.from('clientes').select('prazo_pagamento_dias').eq('id', a.cliente_id).maybeSingle());
       prazo = cli?.prazo_pagamento_dias || 0;
     }
-    // Vencimento = data do serviço + prazo do cliente (ex.: B2B 30 dias)
-    const base = isoLocal(new Date(a.data_hora));
-    formLancamento(null, {
-      tipo: 'entrada', situacao: 'pendente', categoria: 'Serviço',
-      valor: Math.max(total - sinal, 0),
-      descricao: `${a.cliente_nome} - ${umaLinha(a.servico, 60)}`,
-      forma_pagamento: v.forma_pagamento,
-      data_vencimento: somarDias(base, prazo),
-      cliente_id: a.cliente_id, cliente_nome: a.cliente_nome, agendamento_id: a.id,
-    });
-  }));
-}
-
-// Concluir (ou faturar) um serviço: pergunta se o cliente já pagou
-async function formConcluir(a, v, lancs, { jaConcluido = false } = {}) {
-  const total = totalServico(v);
-  const sinal = Number(v?.sinal_valor || 0);
-  const sinalLancado = lancs.some(l => l.categoria === 'Sinal');
-  let prazo = 0;
-  if (a.cliente_id) {
-    const cli = ok(await sb.from('clientes').select('prazo_pagamento_dias').eq('id', a.cliente_id).maybeSingle());
-    prazo = cli?.prazo_pagamento_dias || 0;
+    vencPadrao = somarDias(hoje(), prazo);
   }
-  const vencPadrao = somarDias(isoLocal(new Date(a.data_hora)), prazo);
-  const c = abrirJanela(jaConcluido ? 'Faturar serviço' : 'Concluir serviço', `
-    <form class="form">
-      <p><strong>${esc(a.cliente_nome)}</strong></p>
-      <p class="muted linhas pequeno">${esc(a.servico)}</p>
-      ${total ? `<p class="dica">Total ${brl(total)}${sinal ? ` · sinal ${brl(sinal)} · falta ${brl(Math.max(total - sinal, 0))}` : ''}</p>` : ''}
-      <label>Valor a receber (R$) <input name="valor" inputmode="decimal" placeholder="0,00" value="${paraCampoValor(Math.max(total - sinal, 0))}"></label>
-      ${sinal && !sinalLancado ? `<label class="check"><input type="checkbox" name="lancar_sinal" checked> Registrar também o sinal de ${brl(sinal)} como recebido</label>` : ''}
-      <p style="font-weight:700;color:var(--ink)">O cliente já pagou?</p>
-      <div class="escolha">
-        <label><input type="radio" name="pagou" value="sim"> Sim, já recebi</label>
-        <label><input type="radio" name="pagou" value="nao"> Não, vai pagar depois</label>
+  painel.innerHTML = `
+    <form class="cartao form" style="margin-top:4px">
+      <h3>${modo === 'pago' ? 'Quanto o cliente pagou?' : 'Quando o cliente vai pagar?'}</h3>
+      <div class="grade">
+        <label>Valor (R$) <input name="valor" inputmode="decimal" placeholder="0,00" value="${paraCampoValor(falta)}"></label>
+        ${modo === 'nao' ? `<label>Data do pagamento <input type="date" name="data" required value="${vencPadrao}"></label>` : ''}
+        <label class="${modo === 'nao' ? 'inteiro' : ''}">Forma <select name="forma"><option value="">-</option>${opcoes(FORMAS, v?.forma_pagamento)}</select></label>
       </div>
-      <div class="grade" data-so="sim" hidden>
-        <label>Recebido em <input type="date" name="data_pagamento" value="${hoje()}"></label>
-        <label>Forma <select name="forma_sim"><option value="">-</option>${opcoes(FORMAS, v?.forma_pagamento)}</select></label>
-      </div>
-      <div class="grade" data-so="nao" hidden>
-        <label>Vai pagar em <input type="date" name="data_vencimento" value="${vencPadrao}"></label>
-        <label>Forma <select name="forma_nao"><option value="">-</option>${opcoes(FORMAS, v?.forma_pagamento)}</select></label>
-        <p class="dica inteiro">🔔 Nesse dia, o painel vai perguntar se o cliente pagou.</p>
-      </div>
-      <button type="submit" class="btn btn-verde btn-largo">${jaConcluido ? 'Faturar' : '✓ Concluir serviço'}</button>
-      <button type="button" class="btn btn-largo" id="voltar-concluir">Voltar</button>
-    </form>`);
-  const f = $('form', c);
-  $$('input[name=pagou]', f).forEach(r => r.addEventListener('change', () => {
-    $('[data-so=sim]', f).hidden = f.pagou.value !== 'sim';
-    $('[data-so=nao]', f).hidden = f.pagou.value !== 'nao';
-  }));
-  $('#voltar-concluir', c).addEventListener('click', () => acao(detalheAgendamento)(a.id));
+      ${modo === 'nao' ? '<p class="dica">🔔 Nesse dia, o painel pergunta se o cliente pagou.</p>' : '<p class="dica">Data do pagamento: hoje.</p>'}
+      <button type="submit" class="btn ${modo === 'pago' ? 'btn-verde' : 'btn-primario'} btn-largo">Confirmar</button>
+    </form>`;
+  const f = $('form', painel);
+  f.valor.focus();
   f.addEventListener('submit', ev => {
     ev.preventDefault();
     comBotao(f.querySelector('[type=submit]'), async () => {
-      const d = lerForm(f);
-      if (!d.pagou) { aviso('Responda se o cliente já pagou.', true); return; }
-      const pagou = d.pagou === 'sim';
-      const valor = paraNumero(d.valor);
-      if (!pagou && !valor) { aviso('Coloque o valor a receber.', true); return; }
-      if (pagou ? !d.data_pagamento : !d.data_vencimento) { aviso('Coloque a data.', true); return; }
-      if (d.lancar_sinal) {
-        ok(await sb.from('lancamentos').insert({
-          tipo: 'entrada', situacao: 'pago', categoria: 'Sinal', valor: sinal,
-          descricao: `Sinal - ${a.cliente_nome} - ${umaLinha(a.servico, 60)}`,
-          forma_pagamento: v?.sinal_forma_pagamento || null, data_pagamento: hoje(),
-          cliente_id: a.cliente_id, cliente_nome: a.cliente_nome, agendamento_id: a.id,
-        }));
-      }
-      if (valor) {
-        ok(await sb.from('lancamentos').insert({
-          tipo: 'entrada', categoria: 'Serviço', valor,
-          descricao: `${a.cliente_nome} - ${umaLinha(a.servico, 60)}`,
-          situacao: pagou ? 'pago' : 'pendente',
-          data_pagamento: pagou ? d.data_pagamento : null,
-          data_vencimento: pagou ? null : d.data_vencimento,
-          forma_pagamento: pagou ? d.forma_sim : d.forma_nao,
-          cliente_id: a.cliente_id, cliente_nome: a.cliente_nome, agendamento_id: a.id,
-        }));
-      }
-      if (!jaConcluido) ok(await sb.from('agendamentos').update({ status: 'concluido' }).eq('id', a.id));
-      aviso(pagou ? 'Concluído e faturado.' : `Concluído e a receber. Lembrete em ${fmtData(d.data_vencimento)}.`);
-      recarregar();
-      await detalheAgendamento(a.id);
+      const valor = paraNumero(f.valor.value);
+      if (!valor) { aviso('Coloque o valor.', true); return; }
+      await gravar({ valor, pago: modo === 'pago', data: f.data?.value, forma: f.forma.value });
     });
   });
+}
+
+// Desfaz uma conclusão feita por engano: o valor do serviço sai do faturamento
+async function voltarParaAgendado(a, lancs) {
+  const doServico = lancs.filter(l => l.tipo === 'entrada' && l.categoria !== 'Sinal');
+  const soma = doServico.reduce((t, l) => t + Number(l.valor), 0);
+  const pergunta = doServico.length
+    ? `Voltar para agendado?\n\nO valor de ${brl(soma)} lançado para este serviço sai do faturamento. O sinal, se houver, continua.`
+    : 'Voltar para agendado?';
+  if (!confirm(pergunta)) return;
+  for (const l of doServico) {
+    await apagarArquivosDe('lancamento_id', l.id);
+    ok(await sb.from('lancamentos').delete().eq('id', l.id));
+  }
+  ok(await sb.from('agendamentos').update({ status: 'agendado' }).eq('id', a.id));
+  aviso(doServico.length ? 'Voltou para agendado e saiu do faturamento.' : 'Voltou para agendado.');
+  recarregar();
+  await detalheAgendamento(a.id);
 }
 
 // Abre o catálogo por cômodo e devolve o texto do serviço (ou null)

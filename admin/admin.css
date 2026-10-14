@@ -62,6 +62,7 @@ h1, h2, h3 { color: var(--ink); line-height: 1.2; }
 .btn-primario:hover { background: var(--orange-hover); border-color: var(--orange-hover); }
 .btn-escuro { background: var(--ink); border-color: var(--ink); color: #fff; }
 .btn-verde { background: var(--verde); border-color: var(--verde); color: #fff; }
+.btn-laranja { background: var(--orange-tint); border-color: var(--orange); color: var(--orange-text); }
 .btn-perigo { color: var(--vermelho); border-color: #f0c4bf; }
 .btn-fantasma { border-color: transparent; background: transparent; }
 .btn-pequeno { min-height: 36px; padding: 0 12px; font-size: 14px; }
